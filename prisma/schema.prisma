@@ -1,0 +1,50 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Post {
+  id        String   @id @default(cuid())
+  title     String
+  content   String?
+  published Boolean  @default(false)
+  authorId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CompanyCache {
+  id                String   @id @default(cuid())
+  domain            String   @unique
+  companyName       String
+  confirmedName     String   @default("")
+  companyType       String   @default("Can't Say")   // Developer | Contractor | Consultant | Can't Say
+  realEstate        String   @default("Can't Say")   // e.g. "Commercial, Residential" or "Can't Say"
+  infrastructure    String   @default("Can't Say")   // e.g. "Power, Highway" or "Can't Say"
+  industrial        String   @default("Can't Say")   // e.g. "Warehouse" or "Can't Say"
+  description       String   @default("")
+  location          String   @default("")
+  contactEmail      String   @default("")
+  contactPhone      String   @default("")
+  confidenceOverall Float
+  partial           Boolean  @default(false)
+  cachedAt          BigInt
+  ttlMs             BigInt
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
