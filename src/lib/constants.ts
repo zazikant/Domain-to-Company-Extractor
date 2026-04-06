@@ -12,8 +12,6 @@ export const TIMEOUT_BROWSERLESS_TOTAL_MS = 15_000;
 export const TIMEOUT_GLM_CLASSIFY_MS = 60_000;
 export const TIMEOUT_CONVEX_READ_MS = 5_000;
 export const TIMEOUT_CONVEX_WRITE_MS = 5_000;
-export const TIMEOUT_SQLITE_READ_MS = 5_000;
-export const TIMEOUT_SQLITE_WRITE_MS = 5_000;
 
 // ─── Company Role keywords (for heuristic fallback) ─────────
 export const ROLE_KEYWORDS: Record<string, CompanyRoleType> = {

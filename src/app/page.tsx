@@ -71,9 +71,6 @@ interface ExtractResult {
     convexUrl: string;
     convexStatus: string;
     convexMs: number;
-    sqliteStatus: string;
-    sqliteMs: number;
-    sqliteDetail?: string;
   };
   domain?: string;
   discoveredDomain?: string;
@@ -124,14 +121,14 @@ interface BatchStatus {
   rows: BatchRow[];
 }
 
-const DEFAULT_UPSTASH_URL = process.env.NEXT_PUBLIC_UPSTASH_URL || '';
-const DEFAULT_UPSTASH_TOKEN = process.env.NEXT_PUBLIC_UPSTASH_TOKEN || '';
-const DEFAULT_SERPER_KEY = process.env.NEXT_PUBLIC_SERPER_KEY || '';
-const DEFAULT_BROWSERLESS_TOKEN = process.env.NEXT_PUBLIC_BROWSERLESS_TOKEN || '';
-const DEFAULT_CONVEX_URL = process.env.NEXT_PUBLIC_CONVEX_URL || '';
-const DEFAULT_CONVEX_KEY = process.env.NEXT_PUBLIC_CONVEX_KEY || '';
-const DEFAULT_OPENROUTER_KEY = process.env.NEXT_PUBLIC_OPENROUTER_KEY || '';
-const DEFAULT_NVIDIA_KEY = process.env.NEXT_PUBLIC_NVIDIA_KEY || '';
+const DEFAULT_UPSTASH_URL = 'https://cuddly-newt-74293.upstash.io';
+const DEFAULT_UPSTASH_TOKEN = 'gQAAAAAAASI1AAIncDI3MWYzZDk5NDI1NDc0NzhiYWJkZWE0ZTVkYjFiYjQzY3AyNzQyOTM';
+const DEFAULT_SERPER_KEY = '2fd9bd2a59b4d933cc4c6d31e785df77f99dd9b7';
+const DEFAULT_BROWSERLESS_TOKEN = '2UGxf41CvMtudVG22f11751aed7a7e86085581863bb77efe0';
+const DEFAULT_CONVEX_URL = 'https://earnest-dalmatian-782.convex.cloud';
+const DEFAULT_CONVEX_KEY = 'dev:earnest-dalmatian-782|eyJ2MiI6IjQzNThhN2NlOTIxNTQ2YzliZTA4M2VhN2Q0MzAwYWZmIn0=';
+const DEFAULT_OPENROUTER_KEY = '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';
+const DEFAULT_NVIDIA_KEY = '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';
 
 /* ── Timer hook isolated so parent doesn't re-render every second ── */
 function useElapsedTime() {
@@ -712,7 +709,7 @@ export default function Home() {
 
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <CheckCircle2 className="w-3.5 h-3.5 text-blue-500" />
-                  <span>Results cached for 7 days (partial) or 30 days (complete). Falls back to local SQLite if Convex is unavailable.</span>
+                  <span>Results cached for 7 days (partial) or 30 days (complete).</span>
                 </div>
               </div>
             )}
@@ -941,20 +938,22 @@ export default function Home() {
             {batchStatus && batchStatus.total > 0 && (
               <div className="space-y-3">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="font-medium">
-                    {batchProcessing && !batchPaused ? '⏳ Processing...' : batchPaused ? '⏸ Paused' : '✅ Done'}
+                  <span className="flex items-center gap-2 font-semibold">
+                    {batchStatus.completed === batchStatus.total ? (
+                      <><CheckCircle2 className="w-5 h-5 text-emerald-500 font-bold" /> <span className="text-gray-900 text-lg">Done</span></>
+                    ) : (batchProcessing && !batchPaused ? '⏳ Processing...' : batchPaused ? '⏸ Paused' : '⏳ Ready')}
                   </span>
-                  <span className="text-muted-foreground">
+                  <span className="text-muted-foreground font-medium">
                     {batchStatus.completed}/{batchStatus.total} completed
                     {batchStatus.errors > 0 && <span className="text-red-500 ml-2">({batchStatus.errors} errors)</span>}
                   </span>
                 </div>
-                <div className="relative h-3 w-full bg-gray-100 rounded-full overflow-hidden">
+                <div className="relative h-4 w-full bg-gray-100 rounded-full overflow-hidden shadow-sm">
                   <div
-                    className={`h-full rounded-full transition-all duration-500 ${
+                    className={`h-full rounded-full transition-all duration-700 ease-out ${
                       batchStatus.errors > batchStatus.total * 0.3
                         ? 'bg-gradient-to-r from-amber-400 to-red-500'
-                        : 'bg-gradient-to-r from-blue-400 to-blue-600'
+                        : 'bg-blue-600'
                     }`}
                     style={{ width: `${Math.max(((batchStatus.completed + batchStatus.errors) / batchStatus.total) * 100, 2)}%` }}
                   />
@@ -965,9 +964,9 @@ export default function Home() {
                       onClick={handleBatchPause}
                       variant="outline"
                       size="sm"
-                      className="text-xs"
+                      className="text-xs h-8"
                     >
-                      {batchPaused ? <><Play className="w-3 h-3 mr-1" /> Resume</> : <><Pause className="w-3 h-3 mr-1" /> Pause</>}
+                      {batchPaused ? <><Play className="w-3 h-3 mr-1.5" /> Resume</> : <><Pause className="w-3 h-3 mr-1.5" /> Pause</>}
                     </Button>
                   )}
                   {(batchProcessing || batchPaused) && (
@@ -975,9 +974,9 @@ export default function Home() {
                       onClick={handleBatchCancel}
                       variant="outline"
                       size="sm"
-                      className="text-xs text-red-600 border-red-200 hover:bg-red-50"
+                      className="text-xs h-8 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
                     >
-                      <X className="w-3 h-3 mr-1" /> Cancel
+                      <X className="w-3 h-3 mr-1.5" /> Cancel
                     </Button>
                   )}
                 </div>
@@ -986,17 +985,19 @@ export default function Home() {
 
             {/* Download Results Section */}
             {batchStatus && batchStatus.completed > 0 && (
-              <div className="border border-dashed border-emerald-300 rounded-lg p-4 bg-emerald-50/50 dark:bg-emerald-950/10 space-y-3">
-                <div className="flex items-center gap-2">
-                  <Download className="w-4 h-4 text-emerald-600" />
-                  <span className="text-sm font-medium text-emerald-800 dark:text-emerald-300">Download Results</span>
-                  <Badge variant="secondary" className="text-[10px] bg-emerald-100 text-emerald-700">
+              <div className="border border-dashed border-emerald-300 rounded-xl p-5 bg-emerald-50/30 dark:bg-emerald-950/5 space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="bg-emerald-100 p-1.5 rounded-md">
+                    <Download className="w-4 h-4 text-emerald-600" />
+                  </div>
+                  <span className="text-base font-semibold text-emerald-900 dark:text-emerald-200">Download Results</span>
+                  <Badge variant="secondary" className="px-2 py-0.5 text-xs bg-emerald-100 text-emerald-700 border-emerald-200">
                     {batchStatus.completed} completed
                   </Badge>
                 </div>
-                <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="download-limit" className="text-xs text-muted-foreground whitespace-nowrap">
+                <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+                  <div className="flex items-center gap-3">
+                    <Label htmlFor="download-limit" className="text-sm font-medium text-gray-600 whitespace-nowrap">
                       No. of records:
                     </Label>
                     <Input
@@ -1007,22 +1008,21 @@ export default function Home() {
                       placeholder={`All (${batchStatus.completed})`}
                       value={downloadLimit}
                       onChange={(e) => setDownloadLimit(e.target.value)}
-                      className="w-[120px] h-8 text-xs"
+                      className="w-[100px] h-9 text-sm border-gray-200 shadow-sm"
                     />
                   </div>
                   <Button
                     onClick={downloadResults}
                     disabled={downloading}
-                    variant="outline"
-                    className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200 hover:border-emerald-300 text-xs"
+                    className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 hover:border-emerald-300 h-9 px-5 font-semibold transition-all shadow-sm"
                   >
                     {downloading ? (
-                      <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> Preparing...</>
+                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Preparing...</>
                     ) : (
-                      <><Download className="w-3 h-3 mr-1.5" /> Download CSV</>
+                      <><Download className="w-4 h-4 mr-2" /> Download CSV</>
                     )}
                   </Button>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-[11px] text-muted-foreground italic">
                     Downloads completed records with all columns. Leave empty to download all.
                   </p>
                 </div>
@@ -1031,73 +1031,79 @@ export default function Home() {
 
             {/* Batch Results Table */}
             {batchStatus && batchStatus.rows.length > 0 && (
-              <div className="border rounded-lg overflow-hidden">
-                <div className="max-h-[400px] overflow-auto">
-                  <table className="w-full text-xs">
-                    <thead className="bg-gray-50 sticky top-0">
+              <div className="border rounded-xl overflow-hidden shadow-sm bg-white dark:bg-gray-950">
+                <div className="max-h-[600px] overflow-auto custom-scrollbar">
+                  <table className="w-full text-sm border-separate border-spacing-0">
+                    <thead className="bg-gray-50/80 sticky top-0 backdrop-blur-sm z-10 border-b">
                       <tr>
-                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">#</th>
-                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">Status</th>
-                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">Email</th>
-                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">Company</th>
-                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">Type</th>
-                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">Sectors</th>
-                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">Location</th>
-                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">Confidence</th>
+                        <th className="text-left px-5 py-3 font-semibold text-gray-500 uppercase tracking-wider text-[11px] border-b">Status</th>
+                        <th className="text-left px-5 py-3 font-semibold text-gray-500 uppercase tracking-wider text-[11px] border-b">Email</th>
+                        <th className="text-left px-5 py-3 font-semibold text-gray-500 uppercase tracking-wider text-[11px] border-b">Company</th>
+                        <th className="text-left px-5 py-3 font-semibold text-gray-500 uppercase tracking-wider text-[11px] border-b">Type</th>
+                        <th className="text-left px-5 py-3 font-semibold text-gray-500 uppercase tracking-wider text-[11px] border-b">Sectors</th>
+                        <th className="text-left px-5 py-3 font-semibold text-gray-500 uppercase tracking-wider text-[11px] border-b">Location</th>
+                        <th className="text-left px-5 py-3 font-semibold text-gray-500 uppercase tracking-wider text-[11px] border-b">Confidence</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y">
-                      {batchStatus.rows.map((row, idx) => (
-                        <tr key={row.id} className="hover:bg-gray-50/50">
-                          <td className="px-3 py-2 text-muted-foreground">{idx + 1}</td>
-                          <td className="px-3 py-2">
+                    <tbody className="divide-y divide-gray-100">
+                      {batchStatus.rows.map((row) => (
+                        <tr key={row.id} className="hover:bg-blue-50/30 transition-colors group">
+                          <td className="px-5 py-3.5">
                             {row.status === 'completed' && (
-                              <span className="inline-flex items-center gap-1 text-emerald-600"><CheckCircle2 className="w-3 h-3" /></span>
+                              <div className="w-5 h-5 rounded-full bg-emerald-50 flex items-center justify-center">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                              </div>
                             )}
                             {row.status === 'processing' && (
-                              <span className="inline-flex items-center gap-1 text-blue-600"><Loader2 className="w-3 h-3 animate-spin" /></span>
+                              <div className="w-5 h-5 rounded-full bg-blue-50 flex items-center justify-center">
+                                <Loader2 className="w-3.5 h-3.5 text-blue-500 animate-spin" />
+                              </div>
                             )}
                             {row.status === 'pending' && (
-                              <span className="inline-flex items-center gap-1 text-gray-400"><Database className="w-3 h-3" /></span>
+                              <div className="w-5 h-5 rounded-full bg-gray-50 flex items-center justify-center">
+                                <Database className="w-3.5 h-3.5 text-gray-400" />
+                              </div>
                             )}
                             {row.status === 'error' && (
-                              <span className="inline-flex items-center gap-1 text-red-500" title={row.error_message || ''}><AlertCircle className="w-3 h-3" /></span>
+                              <div className="w-5 h-5 rounded-full bg-red-50 flex items-center justify-center" title={row.error_message || ''}>
+                                <AlertCircle className="w-3.5 h-3.5 text-red-500" />
+                              </div>
                             )}
                           </td>
-                          <td className="px-3 py-2 font-mono text-gray-700 max-w-[180px] truncate">{row.email}</td>
-                          <td className="px-3 py-2 font-medium text-gray-900 max-w-[200px] truncate">
-                            {row.confirmed_name || row.company_name || (row.status === 'error' ? row.error_message?.slice(0, 40) : '—')}
+                          <td className="px-5 py-3.5 text-gray-600 font-medium whitespace-nowrap">{row.email}</td>
+                          <td className="px-5 py-3.5 font-bold text-gray-900 whitespace-nowrap uppercase tracking-tight">
+                            {row.confirmed_name || row.company_name || (row.status === 'error' ? 'ERROR' : '—')}
                           </td>
-                          <td className="px-3 py-2">
+                          <td className="px-5 py-3.5">
                             {row.company_type && row.company_type !== "Can't Say" ? (
-                              <Badge className={`text-[10px] px-1.5 py-0 ${getRoleTypeColor(row.company_type)}`}>
+                              <Badge className="text-[11px] px-2.5 py-0.5 rounded-md font-semibold bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-50 pointer-events-none">
                                 {row.company_type}
                               </Badge>
-                            ) : <span className="text-gray-400">—</span>}
+                            ) : <span className="text-gray-300">—</span>}
                           </td>
-                          <td className="px-3 py-2 max-w-[180px]">
-                            <div className="flex flex-wrap gap-0.5">
-                              {row.real_estate && row.real_estate !== "Can't Say" && (
-                                <Badge className="text-[10px] px-1.5 py-0 bg-blue-50 text-blue-700">{row.real_estate}</Badge>
-                              )}
-                              {row.infrastructure && row.infrastructure !== "Can't Say" && (
-                                <Badge className="text-[10px] px-1.5 py-0 bg-amber-50 text-amber-700">{row.infrastructure}</Badge>
-                              )}
-                              {row.industrial && row.industrial !== "Can't Say" && (
-                                <Badge className="text-[10px] px-1.5 py-0 bg-purple-50 text-purple-700">{row.industrial}</Badge>
-                              )}
+                          <td className="px-5 py-3.5 whitespace-nowrap">
+                            <div className="flex flex-wrap gap-1.5">
+                              {row.real_estate && row.real_estate !== "Can't Say" && row.real_estate.split(',').map((s) => (
+                                <Badge key={s.trim()} className="text-[10px] px-2 py-0 rounded-md bg-blue-50 text-blue-700 border-blue-100 hover:bg-blue-50 pointer-events-none">{s.trim()}</Badge>
+                              ))}
+                              {row.infrastructure && row.infrastructure !== "Can't Say" && row.infrastructure.split(',').map((s) => (
+                                <Badge key={s.trim()} className="text-[10px] px-2 py-0 rounded-md bg-amber-50 text-amber-700 border-amber-100 hover:bg-amber-50 pointer-events-none">{s.trim()}</Badge>
+                              ))}
+                              {row.industrial && row.industrial !== "Can't Say" && row.industrial.split(',').map((s) => (
+                                <Badge key={s.trim()} className="text-[10px] px-2 py-0 rounded-md bg-purple-50 text-purple-700 border-purple-100 hover:bg-purple-50 pointer-events-none">{s.trim()}</Badge>
+                              ))}
                               {(!row.real_estate || row.real_estate === "Can't Say") && (!row.infrastructure || row.infrastructure === "Can't Say") && (!row.industrial || row.industrial === "Can't Say") && (
-                                <span className="text-gray-400">—</span>
+                                <span className="text-gray-300">—</span>
                               )}
                             </div>
                           </td>
-                          <td className="px-3 py-2 text-gray-600 max-w-[120px] truncate">{row.location || '—'}</td>
-                          <td className="px-3 py-2">
+                          <td className="px-5 py-3.5 text-gray-600 whitespace-nowrap font-medium">{row.location || '—'}</td>
+                          <td className="px-5 py-3.5">
                             {row.confidence != null ? (
-                              <span className={`font-medium ${row.confidence >= 0.7 ? 'text-emerald-600' : row.confidence >= 0.5 ? 'text-amber-600' : 'text-red-500'}`}>
+                              <span className={`font-bold text-base ${row.confidence >= 0.7 ? 'text-emerald-500' : row.confidence >= 0.5 ? 'text-amber-500' : 'text-red-500'}`}>
                                 {Math.round((row.confidence || 0) * 100)}%
                               </span>
-                            ) : <span className="text-gray-400">—</span>}
+                            ) : <span className="text-gray-300">—</span>}
                           </td>
                         </tr>
                       ))}
@@ -1436,15 +1442,6 @@ export default function Home() {
                         {result.cacheDiagnostic.convexStatus} ({result.cacheDiagnostic.convexMs}ms)
                       </span>
                     </div>
-                    <div className="flex justify-between">
-                      <span>SQLite:</span>
-                      <span className={result.cacheDiagnostic.sqliteStatus === 'hit' ? 'text-emerald-600' : result.cacheDiagnostic.sqliteStatus === 'error' ? 'text-red-500' : 'text-muted-foreground'}>
-                        {result.cacheDiagnostic.sqliteStatus} ({result.cacheDiagnostic.sqliteMs}ms)
-                      </span>
-                    </div>
-                    {result.cacheDiagnostic.sqliteDetail && (
-                      <div className="text-amber-600">{result.cacheDiagnostic.sqliteDetail}</div>
-                    )}
                   </div>
                 )}
 
@@ -1550,7 +1547,7 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="border-t mt-12 py-6 text-center text-xs text-muted-foreground">
-        <p>Company Information Extractor — Built with Next.js, Prisma, and AI</p>
+        <p>Company Information Extractor — Built with Next.js, Convex, and AI</p>
       </footer>
     </div>
   );

@@ -138,10 +138,9 @@ export async function POST(request: NextRequest) {
         return null;
       }
     };
-
+    let domain: string | undefined;
     try {
       // ═══ STEP 1: ExtractDomain ═══
-      let domain: string;
       try {
         domain = extractDomain(email);
       } catch {
@@ -154,7 +153,7 @@ export async function POST(request: NextRequest) {
       try {
         const { profile: cached, diagnostic } = await getCompanyByDomain(domain, convexUrl || '');
         if (cached) {
-          console.log(`[Batch] Step 2 | Convex/SQLite cache HIT for ${domain} (convex=${diagnostic.convexStatus}, sqlite=${diagnostic.sqliteStatus})`);
+          console.log(`[Batch] Step 2 | Convex cache HIT for ${domain} (status=${diagnostic.convexStatus})`);
           await supabase
             .from('batch_extractions')
             .update({
@@ -219,7 +218,7 @@ export async function POST(request: NextRequest) {
         try {
           const { profile: discoveredCached, diagnostic: discDiag } = await getCompanyByDomain(realDomain, convexUrl || '');
           if (discoveredCached) {
-            console.log(`[Batch] Step 4b | Cross-TLD Convex/SQLite cache HIT: ${domain} → ${realDomain} (convex=${discDiag.convexStatus}, sqlite=${discDiag.sqliteStatus})`);
+            console.log(`[Batch] Step 4b | Cross-TLD Convex cache HIT: ${domain} → ${realDomain} (status=${discDiag.convexStatus})`);
             await supabase
               .from('batch_extractions')
               .update({
