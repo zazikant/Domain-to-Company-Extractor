@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000 2>&1 | tee dev.log",
-    "build": "next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
+    "build": "next build && powershell -Command \"if (Test-Path .next/static) { Copy-Item -Path .next/static -Destination .next/standalone/.next/static -Recurse -Force }; if (Test-Path public) { Copy-Item -Path public -Destination .next/standalone/public -Recurse -Force }\"",
     "vercel-build": "prisma generate && next build",
     "start": "NODE_ENV=production bun .next/standalone/server.js 2>&1 | tee server.log",
     "lint": "eslint .",

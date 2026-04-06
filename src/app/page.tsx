@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useEffect, useRef, memo } from 'react';
+import React, { useState, useCallback, useEffect, useRef, memo, useMemo } from 'react';
 import Image from 'next/image';
 import {
   Card,
@@ -270,6 +270,9 @@ export default function Home() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [downloadLimit, setDownloadLimit] = useState('');
   const [downloading, setDownloading] = useState(false);
+  const [batchConcurrency, setBatchConcurrency] = useState(5);
+  const [patchingSupabase, setPatchingSupabase] = useState(false);
+  const [patchSuccess, setPatchSuccess] = useState(false);
 
   // Load saved keys from localStorage on mount
   useEffect(() => {
@@ -285,6 +288,7 @@ export default function Home() {
       if (saved.nvidiaModel) setNvidiaModel(saved.nvidiaModel);
       if (saved.upstashUrl) setUpstashUrl(saved.upstashUrl);
       if (saved.upstashToken) setUpstashToken(saved.upstashToken);
+      if (saved.batchConcurrency) setBatchConcurrency(parseInt(saved.batchConcurrency));
     }
     setKeysLoaded(true);
   }, []);
@@ -294,6 +298,7 @@ export default function Home() {
       serperKey, browserlessToken, convexUrl, convexKey,
       openrouterKey, llmModel, nvidiaApiKey, nvidiaModel,
       upstashUrl, upstashToken,
+      batchConcurrency: String(batchConcurrency),
     });
     setSaveToast(true);
     setTimeout(() => setSaveToast(false), 2000);
@@ -401,36 +406,47 @@ export default function Home() {
         }),
       });
       const data = await res.json();
-
-      if (data.done) {
-        setBatchProcessing(false);
-        batchProcessRef.current = false;
-        return;
-      }
-    } catch {
-      // Network error — retry after delay
+      return data;
+    } catch (err) {
+      console.error('[Batch Process] network error:', err);
+      return { error: 'network_error' };
     }
   }, [batchId, batchPaused, serperKey, browserlessToken, llmModel, nvidiaApiKey, nvidiaModel, openrouterKey, convexUrl]);
 
-  // Start/stop batch processing loop
+  // Start/stop batch processing loop using a managed worker pool
   useEffect(() => {
-    if (batchProcessing && !batchPaused && batchId) {
-      batchProcessRef.current = true;
-      const interval = setInterval(() => {
-        if (batchProcessRef.current) {
-          processNextRow();
-        }
-      }, 3000); // Process one row every 3 seconds
-
-      batchPollRef.current = interval;
-      return () => clearInterval(interval);
-    } else {
-      if (batchPollRef.current) {
-        clearInterval(batchPollRef.current);
-        batchPollRef.current = null;
-      }
+    if (!batchProcessing || batchPaused || !batchId) {
+      batchProcessRef.current = false;
+      return;
     }
-  }, [batchProcessing, batchPaused, batchId, processNextRow]);
+
+    batchProcessRef.current = true;
+    
+    // Create 'N' workers that continuously pull from the queue
+    const workers = Array.from({ length: batchConcurrency }).map(async (_, i) => {
+      console.log(`[Worker ${i}] Starting...`);
+      while (batchProcessRef.current && !batchPaused) {
+        try {
+          const res = await processNextRow();
+          // If the API returns done:true, it means the queue is empty
+          if (res?.done) {
+            console.log(`[Worker ${i}] Queue empty, stopping.`);
+            break;
+          }
+        } catch (err) {
+          console.error(`[Worker ${i}] Error:`, err);
+          await new Promise(resolve => setTimeout(resolve, 2000)); // Wait before retry
+        }
+      }
+    });
+
+    // We don't await Promise.all here because we want the effect to complete 
+    // and let the workers run in the background.
+
+    return () => {
+      batchProcessRef.current = false;
+    };
+  }, [batchProcessing, batchPaused, batchId, batchConcurrency, processNextRow]);
 
   // Poll batch status
   useEffect(() => {
@@ -514,6 +530,37 @@ export default function Home() {
     }
   }, [batchId, downloadLimit]);
 
+  const handlePatchSupabase = useCallback(async () => {
+    if (!result) return;
+    const domainToPatch = result.discoveredDomain || result.domain;
+    if (!domainToPatch) return;
+
+    setPatchingSupabase(true);
+    try {
+      const res = await fetch('/api/batch/patch-supabase', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          domain: domainToPatch,
+          companyData: result,
+          convexUrl: convexUrl.trim()
+        }),
+      });
+
+      if (res.ok) {
+        setPatchSuccess(true);
+        setTimeout(() => setPatchSuccess(false), 3000);
+      } else {
+        const data = await res.json();
+        alert(`Error syncing to history: ${data.error}`);
+      }
+    } catch {
+      alert('Network error while syncing to history');
+    } finally {
+      setPatchingSupabase(false);
+    }
+  }, [result]);
+
   const getConfidenceColor = (confidence: number) => {
     if (confidence >= 0.8) return 'text-emerald-600';
     if (confidence >= 0.6) return 'text-amber-600';
@@ -569,6 +616,22 @@ export default function Home() {
       </Badge>
     ));
   };
+  
+  // ── Compute Visible Rows (Efficiency for 10k+ batches) ──
+  const visibleRows = useMemo(() => {
+    if (!batchStatus) return [];
+    // Show all currently processing rows
+    const processing = batchStatus.rows.filter(r => r.status === 'processing');
+    
+    // Show the 10 most recently finished (completed or error) rows
+    const finished = batchStatus.rows
+      .filter(r => r.status === 'completed' || r.status === 'error')
+      .slice()
+      .reverse() // Most recent first
+      .slice(0, 10);
+      
+    return [...processing, ...finished];
+  }, [batchStatus]);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
@@ -948,6 +1011,29 @@ export default function Home() {
                     {batchStatus.errors > 0 && <span className="text-red-500 ml-2">({batchStatus.errors} errors)</span>}
                   </span>
                 </div>
+
+                {/* Concurrency Control Slider */}
+                {!batchStatus || batchStatus.completed < batchStatus.total && (
+                  <div className="bg-gray-50 dark:bg-gray-900/40 p-3 rounded-lg border flex flex-col gap-2">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Processing Speed</span>
+                      <span className="font-mono bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{batchConcurrency} parallel workers</span>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <input 
+                        type="range" 
+                        min="1" 
+                        max="15" 
+                        value={batchConcurrency} 
+                        onChange={(e) => setBatchConcurrency(parseInt(e.target.value))}
+                        className="flex-1 accent-blue-600 h-1.5 cursor-pointer"
+                      />
+                      <span className="text-[10px] text-muted-foreground italic">
+                        {batchConcurrency === 1 ? 'Serial (Safe)' : batchConcurrency <= 5 ? 'Steady' : batchConcurrency <= 10 ? 'High Speed' : 'Max Heat'}
+                      </span>
+                    </div>
+                  </div>
+                )}
                 <div className="relative h-4 w-full bg-gray-100 rounded-full overflow-hidden shadow-sm">
                   <div
                     className={`h-full rounded-full transition-all duration-700 ease-out ${
@@ -1046,7 +1132,7 @@ export default function Home() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {batchStatus.rows.map((row) => (
+                      {visibleRows.map((row) => (
                         <tr key={row.id} className="hover:bg-blue-50/30 transition-colors group">
                           <td className="px-5 py-3.5">
                             {row.status === 'completed' && (
@@ -1386,6 +1472,40 @@ export default function Home() {
                   </p>
                 </div>
               )}
+
+              {/* Action Buttons: Force Re-extract & Sync to Supabase */}
+              <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-gray-100">
+                <Button
+                  onClick={() => handleForceRefresh()}
+                  variant="outline"
+                  size="sm"
+                  disabled={loading}
+                  className="text-xs h-9 flex-1 sm:flex-none border-amber-200 text-amber-700 hover:bg-amber-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                  Not satisfied? Force re-extract
+                </Button>
+                
+                <Button
+                  onClick={handlePatchSupabase}
+                  variant="outline"
+                  size="sm"
+                  disabled={patchingSupabase || loading}
+                  className={`text-xs h-9 flex-1 sm:min-w-[180px] transition-all duration-300 ${
+                    patchSuccess 
+                      ? 'bg-emerald-500 text-white border-emerald-500 hover:bg-emerald-600' 
+                      : 'border-blue-200 text-blue-700 hover:bg-blue-50'
+                  }`}
+                >
+                  {patchingSupabase ? (
+                    <><Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> Syncing...</>
+                  ) : patchSuccess ? (
+                    <><CheckCircle2 className="w-3.5 h-3.5 mr-2" /> Synced to History!</>
+                  ) : (
+                    <><Zap className="w-3.5 h-3.5 mr-2 text-blue-500" /> Sync to History (Supabase)</>
+                  )}
+                </Button>
+              </div>
 
               {/* Pipeline Info — shows which services were actually used */}
               {result.pipelineInfo && !result.cached && (

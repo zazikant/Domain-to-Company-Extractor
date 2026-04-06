@@ -31,20 +31,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'batchId is required' }, { status: 400, headers: HEADERS });
     }
 
-    // Pick the next pending row (FIFO by created_at)
-    const { data: row, error: fetchError } = await supabase
-      .from('batch_extractions')
-      .select('id, email')
-      .eq('batch_id', batchId)
-      .eq('status', 'pending')
-      .order('created_at', { ascending: true })
-      .limit(1);
+    // Atomically pick the next pending row using the RPC function we just created
+    // This handles the "FOR UPDATE SKIP LOCKED" locking on the database side
+    const { data: rpcData, error: rpcError } = await supabase
+      .rpc('get_next_batch_row', { batch_id_uuid: batchId });
 
-    if (fetchError) {
-      return NextResponse.json({ error: fetchError.message }, { status: 500, headers: HEADERS });
+    if (rpcError) {
+      console.error('[Batch RPC] error:', rpcError.message);
+      return NextResponse.json({ error: rpcError.message }, { status: 500, headers: HEADERS });
     }
 
-    if (!row || row.length === 0) {
+    if (!rpcData || rpcData.length === 0) {
+      // Small optimization: only check full count if we actually run out of rows
       const { count } = await supabase
         .from('batch_extractions')
         .select('*', { count: 'exact', head: true })
@@ -57,13 +55,9 @@ export async function POST(request: NextRequest) {
       }, { headers: HEADERS });
     }
 
-    const { id: rowId, email } = row[0];
-
-    // Mark as processing
-    await supabase
-      .from('batch_extractions')
-      .update({ status: 'processing', updated_at: new Date().toISOString() })
-      .eq('id', rowId);
+    const row = rpcData[0];
+    const rowId = row.id;
+    const email = row.email;
 
     // Helper: safely save error to Supabase (never throws)
     const saveError = async (domain: string | null, message: string) => {
@@ -111,11 +105,11 @@ export async function POST(request: NextRequest) {
     // Helper: look up Supabase for previously completed batch result by domain
     const lookupSupabaseCache = async (lookupDomain: string): Promise<Record<string, unknown> | null> => {
       try {
-        // Exclude the current row and the current batch to find from OTHER batches
+        // Exclude the current row only, allowing it to find other completed rows in the same batch
         const { data: prevRows, error } = await supabase
           .from('batch_extractions')
           .select('*')
-          .neq('batch_id', batchId)
+          .neq('id', rowId)
           .eq('status', 'completed')
           .or(`domain.eq.${lookupDomain.toLowerCase()},domain.ilike.%${lookupDomain.toLowerCase()}%`)
           .order('confidence', { ascending: false, nullsFirst: false })
@@ -359,7 +353,8 @@ export async function POST(request: NextRequest) {
           partial: finalProfile.partial,
           updated_at: new Date().toISOString(),
         })
-        .eq('id', rowId);
+        .eq('id', rowId)
+        .eq('status', 'processing'); // Safety: Only update if not already patched by 'Sync to History'
 
       return NextResponse.json({
         processed: true,
