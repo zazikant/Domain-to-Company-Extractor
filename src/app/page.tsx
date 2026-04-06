@@ -279,6 +279,9 @@ export default function Home() {
   const [manualMapDomain, setManualMapDomain] = useState('');
   const [mappingActive, setMappingActive] = useState(false);
   const [mappingSuccess, setMappingSuccess] = useState(false);
+  const [batchTotal, setBatchTotal] = useState(0);
+  const [batchAlreadyProcessed, setBatchAlreadyProcessed] = useState(0);
+  const [batchToProcess, setBatchToProcess] = useState(0);
 
   // Load saved keys from localStorage on mount
   useEffect(() => {
@@ -381,8 +384,16 @@ export default function Home() {
       }
 
       setBatchId(data.batchId);
-      setBatchProcessing(true);
-      setBatchPaused(false);
+      setBatchTotal(data.totalEmails || 0);
+      setBatchAlreadyProcessed(data.alreadyProcessed || 0);
+      setBatchToProcess(data.toProcess || 0);
+      
+      if (data.toProcess > 0) {
+        setBatchProcessing(true);
+        setBatchPaused(false);
+      } else {
+        setBatchProcessing(false);
+      }
       setBatchStatus(prev => prev ? null : null);
     } catch {
       setBatchError('Network error during upload');
@@ -1034,6 +1045,42 @@ export default function Home() {
                 <AlertCircle className="w-4 h-4" />
                 <AlertDescription className="text-sm">{batchError}</AlertDescription>
               </Alert>
+            )}
+
+            {/* Batch Upload Summary */}
+            {batchTotal > 0 && (
+              <div className="bg-blue-50/50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/50 rounded-xl p-4 animate-in fade-in slide-in-from-top-2 duration-500">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Database className="w-4 h-4 text-blue-600" />
+                    <span className="font-semibold text-blue-900 dark:text-blue-300">File Analysis Result</span>
+                  </div>
+                  <Badge variant="outline" className="bg-blue-100 text-blue-700 border-blue-200">
+                    {batchTotal} total emails found
+                  </Badge>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-white/80 dark:bg-white/5 p-3 rounded-lg border border-white shadow-sm flex flex-col gap-1">
+                    <span className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">Already in DB</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg font-bold text-gray-900 dark:text-white">{batchAlreadyProcessed}</span>
+                      <span className="text-xs text-emerald-600 font-medium">Skipped</span>
+                    </div>
+                  </div>
+                  <div className="bg-white/80 dark:bg-white/5 p-3 rounded-lg border border-white shadow-sm flex flex-col gap-1">
+                    <span className="text-[10px] uppercase tracking-wider text-blue-500 font-bold">To Process</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg font-bold text-blue-700 dark:text-blue-400">{batchToProcess}</span>
+                      <span className="text-xs text-blue-500 font-medium tracking-tight">New Queue</span>
+                    </div>
+                  </div>
+                </div>
+                {batchToProcess === 0 && batchTotal > 0 && (
+                  <p className="mt-3 text-xs text-emerald-700 dark:text-emerald-400 font-medium flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> All emails in this file are already present in your historical database.
+                  </p>
+                )}
+              </div>
             )}
 
             {/* Batch Progress Bar */}

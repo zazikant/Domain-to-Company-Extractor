@@ -56,11 +56,37 @@ export async function POST(request: NextRequest) {
     // Deduplicate
     const uniqueEmails = [...new Set(emails)];
 
+    // --- NEW: Filter out already completed emails ---
+    const { data: existingCompleted, error: queryError } = await supabase
+      .from('batch_extractions')
+      .select('email')
+      .in('email', uniqueEmails)
+      .eq('status', 'completed');
+
+    if (queryError) {
+      console.warn('[Batch Upload] Query error (skipping check):', queryError.message);
+    }
+
+    const completedSet = new Set((existingCompleted || []).map(r => r.email.toLowerCase()));
+    const toProcessEmails = uniqueEmails.filter(e => !completedSet.has(e));
+    const alreadyProcessedCount = uniqueEmails.length - toProcessEmails.length;
+
+    if (toProcessEmails.length === 0 && uniqueEmails.length > 0) {
+      return NextResponse.json({
+        success: true,
+        batchId: null,
+        totalEmails: uniqueEmails.length,
+        alreadyProcessed: alreadyProcessedCount,
+        toProcess: 0,
+        message: 'All emails in this file are already processed and present in the database.'
+      });
+    }
+
     // Generate a single batch_id for all rows
     const batchId = crypto.randomUUID();
 
-    // Insert all emails with the same batch_id
-    const rows = uniqueEmails.map(email => ({
+    // Insert only the new emails with the same batch_id
+    const rows = toProcessEmails.map(email => ({
       email,
       status: 'pending',
       batch_id: batchId,
@@ -79,6 +105,8 @@ export async function POST(request: NextRequest) {
       success: true,
       batchId,
       totalEmails: uniqueEmails.length,
+      alreadyProcessed: alreadyProcessedCount,
+      toProcess: toProcessEmails.length,
       skippedRows: skipped.length,
       skippedExamples: skipped.slice(0, 5),
     });
