@@ -597,6 +597,13 @@ export default function Home() {
       });
 
       if (res.ok) {
+        const data = await res.json();
+        const count = data.patchedCount || 0;
+        
+        if (count === 0) {
+          alert(`Mapping saved to Cloud Cache, but no historical records for "${manualMapDomain}" were found in Supabase to update.`);
+        }
+        
         setMappingSuccess(true);
         setManualMapDomain(''); // Clear input
         setTimeout(() => setMappingSuccess(false), 3000);

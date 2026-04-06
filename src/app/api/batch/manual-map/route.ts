@@ -23,14 +23,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400, headers: HEADERS });
     }
 
-    console.log(`[Manual Map] Mapping ${originalDomain} → ${correctedDomain}...`);
+    const cleanOriginal = originalDomain.trim().toLowerCase();
+    const cleanCorrected = correctedDomain.trim().toLowerCase();
+    const wwwOriginal = `www.${cleanOriginal}`;
 
-    // 1. Update all matching rows in Supabase
-    // We update the domain value itself AND the perfect data
+    console.log(`[Manual Map] Mapping ${cleanOriginal} (and ${wwwOriginal}) → ${cleanCorrected}...`);
+
+    // 1. Update all matching rows in Supabase (raw domain and www variant)
     const { data, error, count } = await supabase
       .from('batch_extractions')
       .update({
-        domain: correctedDomain.toLowerCase(),
+        domain: cleanCorrected,
         company_name: companyData.company.name,
         confirmed_name: companyData.company.confirmedName || companyData.company.name,
         company_type: companyData.company.companyType,
@@ -46,13 +49,15 @@ export async function POST(request: Request) {
         updated_at: new Date().toISOString(),
         status: 'completed' 
       })
-      .ilike('domain', originalDomain) // Matches all records for the "wrong" domain
+      .or(`domain.ilike.${cleanOriginal},domain.ilike.${wwwOriginal}`)
       .select('id');
 
     if (error) {
-      console.error(`[Manual Map] Supabase error mapping ${originalDomain}:`, error.message);
+      console.error(`[Manual Map] Supabase error mapping ${cleanOriginal}:`, error.message);
       return NextResponse.json({ error: error.message }, { status: 500, headers: HEADERS });
     }
+
+    const patchedCount = count || data?.length || 0;
 
     // 2. Update Convex Cache for BOTH domains
     try {
@@ -73,13 +78,14 @@ export async function POST(request: Request) {
           cachedAt: Date.now()
         };
         
-        // Write perfect data to the ORIGINAL domain key (aliasing)
-        await cacheCompanyProfile(originalDomain, profile, profile.partial, convexUrl, true);
+        // Write perfect data to the ORIGINAL domain keys (both variants)
+        await cacheCompanyProfile(cleanOriginal, profile, profile.partial, convexUrl, true);
+        await cacheCompanyProfile(wwwOriginal, profile, profile.partial, convexUrl, true);
         
         // Ensure it's also keyed under the CORRECTED domain
-        await cacheCompanyProfile(correctedDomain, profile, profile.partial, convexUrl, true);
+        await cacheCompanyProfile(cleanCorrected, profile, profile.partial, convexUrl, true);
         
-        console.log(`[Manual Map] Successfully updated cloud cache for both ${originalDomain} and ${correctedDomain}`);
+        console.log(`[Manual Map] Successfully updated cloud cache for ${cleanOriginal}, ${wwwOriginal} and ${cleanCorrected}`);
       }
     } catch (cacheErr) {
       console.warn(`[Manual Map] Failed to update secondary cloud cache:`, cacheErr);

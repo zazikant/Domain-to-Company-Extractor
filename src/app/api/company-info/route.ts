@@ -4,6 +4,7 @@ import { join } from "path";
 import { extractDomain, calculateSearchConfidence, discoverRealDomain, extractCompanyName, buildFinalProfile } from "@/lib/pipeline";
 import { serperSearch, scrapeWithBrowserless, classifyWithGLM, classifyWithNvidia } from "@/lib/services";
 import { getCompanyByDomain, cacheCompanyProfile, type CacheDiagnostic } from "@/lib/cache";
+import { supabase } from "@/lib/supabase";
 import { checkRateLimit, initRedis } from "@/lib/rate-limit";
 import type { SearchResult, ScrapedContent, ClassificationResult } from "@/lib/types";
 
@@ -137,6 +138,46 @@ export async function POST(request: NextRequest) {
         console.log(`[Pipeline] Step 2 | Cache MISS for ${domain} | diag=${JSON.stringify(diagnostic)}`);
       } catch (err) {
         console.error(`[Pipeline] Step 2 | Cache lookup error:`, err);
+      }
+
+      // ═══ STEP 2b: Supabase History Lookup (email-based) ═══
+      try {
+        const { data: existing, error: dbError } = await supabase
+          .from('batch_extractions')
+          .select('*')
+          .eq('email', email.toLowerCase())
+          .eq('status', 'completed')
+          .order('updated_at', { ascending: false })
+          .limit(1);
+
+        if (!dbError && existing && existing.length > 0) {
+          const matched = existing[0];
+          console.log(`[Pipeline] Step 2b | History HIT for ${email}`);
+          logToFile({ event: "HISTORY_HIT", email, domain });
+          return NextResponse.json({
+            company: {
+              name: matched.company_name,
+              confirmedName: matched.confirmed_name || matched.company_name,
+              companyType: matched.company_type,
+              realEstate: matched.real_estate,
+              infrastructure: matched.infrastructure,
+              industrial: matched.industrial,
+            },
+            description: matched.description || "",
+            location: matched.location || "",
+            contactEmail: matched.contact_email || "",
+            contactPhone: matched.contact_phone || "",
+            confidence: matched.confidence,
+            partial: matched.partial,
+            cached: true,
+            domain: domain,
+            cacheDiagnostic: { convexUrl, convexStatus: 'hit', convexMs: 0 }, // Fake diagnostic for UI consistency
+            cacheSource: 'database',
+            buildTime: BUILD_TIME,
+          }, { status: 200, headers });
+        }
+      } catch (err) {
+        console.error(`[Pipeline] Step 2b | History lookup error:`, err);
       }
     } else {
       logToFile({ event: "CACHE_SKIPPED_FORCE_REFRESH", domain });
