@@ -308,15 +308,6 @@ export default function Home() {
       setError({ error: 'invalid_email', message: 'Please enter a valid email address.' });
       return;
     }
-    if (!serperKey.trim()) {
-      setError({ error: 'invalid_api_key', source: 'serper', message: 'Serper.dev API Key is required.' });
-      return;
-    }
-    if (!browserlessToken.trim()) {
-      setError({ error: 'invalid_api_key', source: 'browserless', message: 'Browserless.io Token is required.' });
-      return;
-    }
-
     setLoading(true);
     setResult(null);
     setError(null);
@@ -714,23 +705,6 @@ export default function Home() {
                       placeholder="https://your-project.convex.cloud"
                       value={convexUrl}
                       onChange={(e) => setConvexUrl(e.target.value)}
-                      className="pl-9 pr-10"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="convex-key" className="text-sm font-medium">
-                    Convex API Key
-                  </Label>
-                  <div className="relative">
-                    <Database className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      id="convex-key"
-                      type={showKeys ? 'text' : 'password'}
-                      placeholder="Enter your Convex API key"
-                      value={convexKey}
-                      onChange={(e) => setConvexKey(e.target.value)}
                       className="pl-9 pr-10"
                     />
                   </div>
