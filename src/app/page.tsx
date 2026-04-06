@@ -48,7 +48,10 @@ import {
   Table2,
   Pause,
   Play,
+  Link,
+  GitCompare,
   Download,
+  Info,
 } from 'lucide-react';
 
 interface ExtractResult {
@@ -273,6 +276,9 @@ export default function Home() {
   const [batchConcurrency, setBatchConcurrency] = useState(5);
   const [patchingSupabase, setPatchingSupabase] = useState(false);
   const [patchSuccess, setPatchSuccess] = useState(false);
+  const [manualMapDomain, setManualMapDomain] = useState('');
+  const [mappingActive, setMappingActive] = useState(false);
+  const [mappingSuccess, setMappingSuccess] = useState(false);
 
   // Load saved keys from localStorage on mount
   useEffect(() => {
@@ -559,7 +565,40 @@ export default function Home() {
     } finally {
       setPatchingSupabase(false);
     }
-  }, [result]);
+  }, [result, convexUrl]);
+
+  const handleManualMap = useCallback(async () => {
+    if (!result || !manualMapDomain.trim()) return;
+    const correctedDomain = result.discoveredDomain || result.domain;
+    if (!correctedDomain) return;
+
+    setMappingActive(true);
+    try {
+      const res = await fetch('/api/batch/manual-map', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          originalDomain: manualMapDomain.trim(),
+          correctedDomain: correctedDomain,
+          companyData: result,
+          convexUrl: convexUrl.trim()
+        }),
+      });
+
+      if (res.ok) {
+        setMappingSuccess(true);
+        setManualMapDomain(''); // Clear input
+        setTimeout(() => setMappingSuccess(false), 3000);
+      } else {
+        const data = await res.json();
+        alert(`Error mapping domain: ${data.error}`);
+      }
+    } catch {
+      alert('Network error while mapping domain');
+    } finally {
+      setMappingActive(false);
+    }
+  }, [result, manualMapDomain, convexUrl]);
 
   const getConfidenceColor = (confidence: number) => {
     if (confidence >= 0.8) return 'text-emerald-600';
@@ -1505,6 +1544,58 @@ export default function Home() {
                     <><Zap className="w-3.5 h-3.5 mr-2 text-blue-500" /> Sync to History (Supabase)</>
                   )}
                 </Button>
+              </div>
+
+              {/* Manual Correction & Mapping Dashboard */}
+              <div className="pt-6 mt-6 border-t border-gray-100 bg-gray-50/50 -mx-6 px-6 pb-2">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="bg-blue-100 p-1.5 rounded-lg text-blue-600">
+                    <Link className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-gray-900 leading-none">Manual Domain Mapping</h4>
+                    <p className="text-[11px] text-gray-500 mt-1">
+                      Map a "wrong" domain to this perfect result globally (Supabase + Cloud Cache)
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <Input
+                      placeholder="e.g. mswc.in"
+                      value={manualMapDomain}
+                      onChange={(e) => setManualMapDomain(e.target.value)}
+                      className="pl-9 h-10 border-blue-100 focus-visible:ring-blue-400 bg-white"
+                    />
+                  </div>
+                  <Button
+                    onClick={handleManualMap}
+                    disabled={mappingActive || !manualMapDomain.trim()}
+                    className={`h-10 px-6 transition-all duration-300 font-semibold ${
+                      mappingSuccess 
+                        ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-200' 
+                        : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'
+                    } shadow-md`}
+                  >
+                    {mappingActive ? (
+                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Mapping...</>
+                    ) : mappingSuccess ? (
+                      <><CheckCircle2 className="w-4 h-4 mr-2" /> Mapped!</>
+                    ) : (
+                      <><GitCompare className="w-4 h-4 mr-2" /> Map & Apply</>
+                    )}
+                  </Button>
+                </div>
+                
+                <div className="mt-3 flex items-start gap-2 bg-blue-50/50 p-2.5 rounded-lg border border-blue-100/50">
+                  <Info className="w-3.5 h-3.5 text-blue-500 mt-0.5 shrink-0" />
+                  <p className="text-[10.5px] text-blue-700 leading-relaxed">
+                    <strong>Notice:</strong> This will rewrite all historical records for <strong>{manualMapDomain || "the entered domain"}</strong> in Supabase 
+                    to be <strong>{(result.discoveredDomain || result.domain) as string}</strong> and forever cache this research data locally.
+                  </p>
+                </div>
               </div>
 
               {/* Pipeline Info — shows which services were actually used */}
