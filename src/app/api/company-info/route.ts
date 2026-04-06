@@ -38,13 +38,13 @@ function logToFile(entry: Record<string, unknown>) {
 }
 
 export async function POST(request: NextRequest) {
-  // Extract Upstash Redis credentials from headers
-  const upstashUrl = request.headers.get("x-upstash-redis-url")?.trim() || DEFAULT_UPSTASH_URL;
-  const upstashToken = request.headers.get("x-upstash-redis-token")?.trim() || DEFAULT_UPSTASH_TOKEN;
+  // Extract Upstash Redis credentials from headers (fallback to server-side env)
+  const upstashUrl = request.headers.get("x-upstash-redis-url")?.trim() || process.env.X_UPSTASH_REDIS_URL || DEFAULT_UPSTASH_URL;
+  const upstashToken = request.headers.get("x-upstash-redis-token")?.trim() || process.env.X_UPSTASH_REDIS_TOKEN || DEFAULT_UPSTASH_TOKEN;
   initRedis(upstashUrl, upstashToken);
 
   // Convex deployment URL for cloud caching
-  const convexUrl = request.headers.get("x-convex-url")?.trim() || "";
+  const convexUrl = request.headers.get("x-convex-url")?.trim() || process.env.X_CONVEX_URL || "";
 
   // Force refresh: skip cache read, always run full pipeline & overwrite cache
   const forceRefresh = request.headers.get("x-force-refresh")?.trim() === "true";
@@ -74,13 +74,13 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    // Extract API keys
-    const serperApiKey = request.headers.get("x-serper-api-key");
-    const browserlessToken = request.headers.get("x-browserless-token");
-    const openrouterApiKey = request.headers.get("x-openrouter-api-key");
-    const nvidiaApiKey = request.headers.get("x-nvidia-api-key")?.trim() || "";
-    const llmModel = request.headers.get("x-llm-model")?.trim() || "openrouter";
-    const nvidiaModelName = request.headers.get("x-nvidia-model")?.trim() || "openai/gpt-oss-120b";
+    // Extract API keys (priority: headers > server-side env)
+    const serperApiKey = request.headers.get("x-serper-api-key")?.trim() || process.env.X_SERPER_API_KEY || "";
+    const browserlessToken = request.headers.get("x-browserless-token")?.trim() || process.env.X_BROWSERLESS_TOKEN || "";
+    const openrouterApiKey = request.headers.get("x-openrouter-api-key")?.trim() || process.env.X_OPENROUTER_API_KEY || "";
+    const nvidiaApiKey = request.headers.get("x-nvidia-api-key")?.trim() || process.env.X_NVIDIA_API_KEY || "";
+    const llmModel = request.headers.get("x-llm-model")?.trim() || "nvidia"; // Default to Nvidia
+    const nvidiaModelName = request.headers.get("x-nvidia-model")?.trim() || process.env.X_NVIDIA_MODEL || "openai/gpt-oss-120b";
 
     if (!serperApiKey) return NextResponse.json({ error: "invalid_api_key", source: "serper", message: "X-Serper-Api-Key header is required" }, { status: 401, headers });
     if (!browserlessToken) return NextResponse.json({ error: "invalid_api_key", source: "browserless", message: "X-Browserless-Token header is required" }, { status: 401, headers });
